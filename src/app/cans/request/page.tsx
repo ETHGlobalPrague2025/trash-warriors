@@ -99,6 +99,14 @@ export default function RequestCanPage() {
             {/* Content */}
             <div className="relative z-20 min-h-screen p-4">
                 <div className="max-w-md mx-auto">
+                    {/* Back button */}
+                    <button
+                        onClick={() => router.push('/cans')}
+                        className="mb-4 text-green-400 hover:text-green-300"
+                    >
+                        ← Back to Requests
+                    </button>
+
                     {/* Header */}
                     <div className="mb-6">
                         <h1 className="text-2xl font-bold text-yellow-400 mb-2">REQUEST NEW CAN</h1>

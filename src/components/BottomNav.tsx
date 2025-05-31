@@ -28,7 +28,7 @@ export default function BottomNav() {
                     icon="🗑️"
                     label="CANS"
                     isActive={pathname.includes('/cans')}
-                    onClick={() => router.push('/cans/request')}
+                    onClick={() => router.push('/cans')}
                 />
                 <NavButton
                     icon="🏆"
@@ -47,25 +47,24 @@ export default function BottomNav() {
     );
 }
 
-function NavButton({ 
-    icon, 
-    label, 
-    isActive, 
-    onClick 
-}: { 
-    icon: string; 
-    label: string; 
-    isActive: boolean; 
+function NavButton({
+    icon,
+    label,
+    isActive,
+    onClick
+}: {
+    icon: string;
+    label: string;
+    isActive: boolean;
     onClick: () => void;
 }) {
     return (
         <button
             onClick={onClick}
-            className={`flex flex-col items-center p-2 rounded transition-colors ${
-                isActive 
-                    ? 'text-green-400' 
+            className={`flex flex-col items-center p-2 rounded transition-colors ${isActive
+                    ? 'text-green-400'
                     : 'text-gray-400 hover:text-green-400'
-            }`}
+                }`}
         >
             <span className="text-2xl mb-1">{icon}</span>
             <span className="text-xs font-bold">{label}</span>
