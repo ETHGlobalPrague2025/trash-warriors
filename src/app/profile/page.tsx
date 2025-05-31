@@ -71,27 +71,11 @@ export default function ProfilePage() {
                     </div>
 
                     {/* Stats Grid */}
-                    <div className="grid grid-cols-4 gap-2 mb-6">
+                    <div className="grid grid-cols-4 gap-2">
                         <StatBox label="Quests" value={profile.stats.quests} color="text-green-400" />
                         <StatBox label="Tokens" value={profile.stats.tokens} color="text-yellow-400" />
                         <StatBox label="Bins" value={profile.stats.bins} color="text-green-400" />
                         <StatBox label="Streak" value={profile.stats.streak} color="text-red-400" />
-                    </div>
-
-                    {/* Navigation Buttons */}
-                    <div className="grid grid-cols-3 gap-4">
-                        <button className="bg-green-500 text-black font-bold py-2 px-4 rounded">
-                            PROFILE
-                        </button>
-                        <button 
-                            onClick={() => router.push('/quests')}
-                            className="bg-orange-500 text-black font-bold py-2 px-4 rounded"
-                        >
-                            QUESTS
-                        </button>
-                        <button className="bg-black border border-green-500 text-green-500 font-bold py-2 px-4 rounded">
-                            LEADERBOARD
-                        </button>
                     </div>
                 </div>
 
