@@ -4,24 +4,43 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 
-interface Can {
+interface PendingCan {
     id: number;
     location: string;
     totalStaked: bigint;
-    status: 'pending' | 'active';
-    targetAmount?: bigint;
-    currentValue?: bigint;
-    isLocked?: boolean;
-    deploymentTimestamp?: number;
-    lastEmptiedTimestamp?: number;
+    targetAmount: bigint;
+    status: 'pending';
 }
+
+interface ActiveCan {
+    id: number;
+    location: string;
+    totalStaked: bigint;
+    currentValue: bigint;
+    isLocked: boolean;
+    deploymentTimestamp: number;
+    lastEmptiedTimestamp: number;
+    status: 'active';
+}
+
+interface PendingCanInfo {
+    location: string;
+    totalStaked: bigint;
+    targetAmount: bigint;
+    deployed: boolean;
+    deployedGarbageCanId: bigint;
+}
+
+type Can = PendingCan | ActiveCan;
 
 const RECYCLING_SYSTEM_ADDRESS = process.env.NEXT_PUBLIC_RECYCLING_SYSTEM_ADDRESS!;
 
 const RECYCLING_SYSTEM_ABI = [
     // View functions for both can types
     "function pendingGarbageCans(uint256) external view returns (string location, uint256 totalStaked, uint256 targetAmount, bool deployed, uint256 deployedGarbageCanId)",
-    "function garbageCans(uint256) external view returns (uint256 id, string location, uint256 currentValue, bool isActive, bool isLocked, uint256 deploymentTimestamp, uint256 lastEmptiedTimestamp, uint256 totalStaked)"
+    "function garbageCans(uint256) external view returns (uint256 id, string location, uint256 currentValue, bool isActive, bool isLocked, uint256 deploymentTimestamp, uint256 lastEmptiedTimestamp, uint256 totalStaked)",
+    "function nextGarbageCanId() external view returns (uint256)",
+    "function nextPendingGarbageCanId() external view returns (uint256)"
 ] as const;
 
 export default function CansPage() {
@@ -38,7 +57,7 @@ export default function CansPage() {
     const loadCans = async () => {
         try {
             setIsLoading(true);
-            
+
             const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC);
             const contract = new ethers.Contract(
                 RECYCLING_SYSTEM_ADDRESS,
@@ -46,40 +65,56 @@ export default function CansPage() {
                 provider
             );
 
-            // Get one pending can
-            try {
-                const pendingInfo = await contract.pendingGarbageCans(1);
-                if (!pendingInfo.deployed) {
-                    setCans(cans => [...cans, {
-                        id: 1,
-                        location: pendingInfo.location,
-                        totalStaked: pendingInfo.totalStaked,
-                        targetAmount: pendingInfo.targetAmount,
-                        status: 'pending'
-                    }]);
+            // Get total counts
+            const [nextPendingId, nextActiveId] = await Promise.all([
+                contract.nextPendingGarbageCanId(),
+                contract.nextGarbageCanId()
+            ]);
+
+            const pendingList: PendingCan[] = [];
+            const activeList: ActiveCan[] = [];
+
+            // Get pending cans
+            for (let i = 0; i < Number(nextPendingId); i++) {
+                try {
+                    const pendingInfo: PendingCanInfo = await contract.pendingGarbageCans(i);
+                    if (!pendingInfo.deployed) {
+                        pendingList.push({
+                            id: i,
+                            location: pendingInfo.location,
+                            totalStaked: pendingInfo.totalStaked,
+                            targetAmount: pendingInfo.targetAmount,
+                            status: 'pending'
+                        });
+                    }
+                } catch (e) {
+                    console.log(`Error fetching pending can ${i}:`, e);
                 }
-            } catch (e) {
-                console.log('No pending can found');
             }
 
-            // Get one active can
-            try {
-                const activeInfo = await contract.garbageCans(1);
-                if (activeInfo.isActive) {
-                    setCans(cans => [...cans, {
-                        id: 1,
-                        location: activeInfo.location,
-                        totalStaked: activeInfo.totalStaked,
-                        currentValue: activeInfo.currentValue,
-                        isLocked: activeInfo.isLocked,
-                        deploymentTimestamp: Number(activeInfo.deploymentTimestamp),
-                        lastEmptiedTimestamp: Number(activeInfo.lastEmptiedTimestamp),
-                        status: 'active'
-                    }]);
+            // Get active cans
+            for (let i = 0; i < Number(nextActiveId); i++) {
+                try {
+                    const activeInfo = await contract.garbageCans(i);
+                    if (activeInfo.isActive) {
+                        activeList.push({
+                            id: i,
+                            location: activeInfo.location,
+                            totalStaked: activeInfo.totalStaked,
+                            currentValue: activeInfo.currentValue,
+                            isLocked: activeInfo.isLocked,
+                            deploymentTimestamp: Number(activeInfo.deploymentTimestamp),
+                            lastEmptiedTimestamp: Number(activeInfo.lastEmptiedTimestamp),
+                            status: 'active'
+                        });
+                    }
+                } catch (e) {
+                    console.log(`Error fetching active can ${i}:`, e);
                 }
-            } catch (e) {
-                console.log('No active can found');
             }
+
+            // Combine both lists
+            setCans([...pendingList, ...activeList]);
 
         } catch (err) {
             console.error('Error loading cans:', err);
@@ -126,31 +161,28 @@ export default function CansPage() {
                     <div className="flex gap-2 mb-6">
                         <button
                             onClick={() => setFilter('all')}
-                            className={`px-4 py-2 rounded ${
-                                filter === 'all'
-                                    ? 'bg-green-500 text-black'
-                                    : 'bg-black/50 text-green-400'
-                            }`}
+                            className={`px-4 py-2 rounded ${filter === 'all'
+                                ? 'bg-green-500 text-black'
+                                : 'bg-black/50 text-green-400'
+                                }`}
                         >
                             All
                         </button>
                         <button
                             onClick={() => setFilter('pending')}
-                            className={`px-4 py-2 rounded ${
-                                filter === 'pending'
-                                    ? 'bg-green-500 text-black'
-                                    : 'bg-black/50 text-green-400'
-                            }`}
+                            className={`px-4 py-2 rounded ${filter === 'pending'
+                                ? 'bg-green-500 text-black'
+                                : 'bg-black/50 text-green-400'
+                                }`}
                         >
                             Pending
                         </button>
                         <button
                             onClick={() => setFilter('active')}
-                            className={`px-4 py-2 rounded ${
-                                filter === 'active'
-                                    ? 'bg-green-500 text-black'
-                                    : 'bg-black/50 text-green-400'
-                            }`}
+                            className={`px-4 py-2 rounded ${filter === 'active'
+                                ? 'bg-green-500 text-black'
+                                : 'bg-black/50 text-green-400'
+                                }`}
                         >
                             Active
                         </button>
@@ -172,17 +204,16 @@ export default function CansPage() {
                                 >
                                     <div className="flex justify-between items-center mb-2">
                                         <h2 className="text-white font-bold">Can #{can.id}</h2>
-                                        <span className={`px-2 py-1 rounded text-xs ${
-                                            can.status === 'pending'
-                                                ? 'bg-yellow-500/20 text-yellow-400'
+                                        <span className={`px-2 py-1 rounded text-xs ${can.status === 'pending'
+                                            ? 'bg-yellow-500/20 text-yellow-400'
+                                            : can.isLocked
+                                                ? 'bg-red-500/20 text-red-400'
+                                                : 'bg-green-500/20 text-green-400'
+                                            }`}>
+                                            {can.status === 'pending'
+                                                ? 'PENDING'
                                                 : can.isLocked
-                                                    ? 'bg-red-500/20 text-red-400'
-                                                    : 'bg-green-500/20 text-green-400'
-                                        }`}>
-                                            {can.status === 'pending' 
-                                                ? 'PENDING' 
-                                                : can.isLocked 
-                                                    ? 'LOCKED' 
+                                                    ? 'LOCKED'
                                                     : 'ACTIVE'}
                                         </span>
                                     </div>
@@ -210,7 +241,7 @@ export default function CansPage() {
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={() => router.push(`/cans/${can.id}`)}
+                                                onClick={() => router.push(`/cans/${can.status}/${can.id}`)}
                                                 className="bg-green-500 hover:bg-green-600 text-black font-bold py-2 px-4 rounded w-full"
                                             >
                                                 CONTRIBUTE
@@ -236,11 +267,10 @@ export default function CansPage() {
                                             <button
                                                 onClick={() => router.push(`/collector?canId=${can.id}`)}
                                                 disabled={can.isLocked}
-                                                className={`w-full font-bold py-2 px-4 rounded ${
-                                                    can.isLocked
-                                                        ? 'bg-gray-500 cursor-not-allowed'
-                                                        : 'bg-green-500 hover:bg-green-600'
-                                                } text-black`}
+                                                className={`w-full font-bold py-2 px-4 rounded ${can.isLocked
+                                                    ? 'bg-gray-500 cursor-not-allowed'
+                                                    : 'bg-green-500 hover:bg-green-600'
+                                                    } text-black`}
                                             >
                                                 {can.isLocked ? 'LOCKED' : 'COLLECT'}
                                             </button>
