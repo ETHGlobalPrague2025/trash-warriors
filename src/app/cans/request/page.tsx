@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Map from '@/components/Map';
 import { approveUSDC } from '@/services/contracts';
+import { createCan } from '@/services/canService';
 import SelectLocationMap from '@/components/SelectLocationMap';
 
 interface StakingTier {
@@ -45,10 +46,18 @@ const STAKING_TIERS: StakingTier[] = [
     }
 ];
 
+interface MapLocation {
+    address: string;
+    coordinates: {
+        lat: number;
+        lng: number;
+    };
+}
+
 export default function RequestCanPage() {
     const router = useRouter();
     const [selectedTier, setSelectedTier] = useState<number>(0);
-    const [location, setLocation] = useState({
+    const [location, setLocation] = useState<MapLocation>({
         address: '',
         coordinates: { lat: 0, lng: 0 }
     });
@@ -61,24 +70,25 @@ export default function RequestCanPage() {
         setIsStaking(true);
 
         try {
-            // First approve the USDC spend
+            // First approve USDC spend to the contract
             await approveUSDC(STAKING_TIERS[selectedTier].amount);
 
-            // TODO: Call the contract to create the staking pool
-            console.log('Creating pending garbage can:', {
-                location,
-                targetAmount: STAKING_TIERS[selectedTier].amount
-            });
+            // Create the pending garbage can
+            await createCan(
+                location.address,
+                STAKING_TIERS[selectedTier].amount
+            );
 
             router.push('/cans'); // Redirect to cans overview
         } catch (err) {
+            console.error('Error creating can:', err);
             setError(err instanceof Error ? err.message : 'Failed to create staking pool');
         } finally {
             setIsStaking(false);
         }
     };
 
-    const handleLocationSelect = (newLocation: Location) => {
+    const handleLocationSelect = (newLocation: MapLocation) => {
         setLocation(newLocation);
     };
 
@@ -134,9 +144,8 @@ export default function RequestCanPage() {
                             <div
                                 key={index}
                                 onClick={() => setSelectedTier(index)}
-                                className={`bg-black/50 border-2 ${tier.color} rounded-lg p-4 backdrop-blur-sm cursor-pointer ${
-                                    selectedTier === index ? 'border-opacity-100' : 'border-opacity-30'
-                                }`}
+                                className={`bg-black/50 border-2 ${tier.color} rounded-lg p-4 backdrop-blur-sm cursor-pointer ${selectedTier === index ? 'border-opacity-100' : 'border-opacity-30'
+                                    }`}
                             >
                                 <div className="flex justify-between items-center mb-2">
                                     <div className="text-white font-bold">
@@ -162,11 +171,10 @@ export default function RequestCanPage() {
                     <button
                         onClick={handleSubmit}
                         disabled={isStaking || !location.address}
-                        className={`w-full font-bold py-3 px-4 rounded transition-colors ${
-                            isStaking || !location.address
+                        className={`w-full font-bold py-3 px-4 rounded transition-colors ${isStaking || !location.address
                                 ? 'bg-gray-500 cursor-not-allowed'
                                 : 'bg-green-500 hover:bg-green-600'
-                        } text-black`}
+                            } text-black`}
                     >
                         {isStaking ? 'CREATING POOL...' : 'CREATE STAKING POOL'}
                     </button>
@@ -179,8 +187,8 @@ export default function RequestCanPage() {
 
                     {/* Info Box */}
                     <div className="mt-4 bg-blue-500/20 border border-blue-500/30 rounded p-3 text-sm text-blue-400">
-                        <strong>Note:</strong> Once the staking pool is created, community members can 
-                        contribute $TRASH tokens to fund the garbage can installation. The pool will be 
+                        <strong>Note:</strong> Once the staking pool is created, community members can
+                        contribute $TRASH tokens to fund the garbage can installation. The pool will be
                         active for 30 days.
                     </div>
                 </div>

@@ -1,18 +1,31 @@
 import { ethers } from 'ethers';
 
-export const TEST_USDC_ADDRESS = '0xeFaDc14c2DD95D0E6969d0B25EA6e4F830150493';
-export const FLOW_TESTNET_CHAIN_ID = '0x221'; // 545 in hex
+// Contract addresses from environment variables
+export const RECYCLING_SYSTEM_ADDRESS = process.env.NEXT_PUBLIC_RECYCLING_SYSTEM_ADDRESS!;
+export const TEST_USDC_ADDRESS = process.env.NEXT_PUBLIC_TEST_USDC_ADDRESS!;
+export const TRASH_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_TRASH_TOKEN_ADDRESS!;
+export const TRASH_NFT_ADDRESS = process.env.NEXT_PUBLIC_TRASH_NFT_ADDRESS!;
+export const QUEST_SYSTEM_ADDRESS = process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS!;
+
+// Network configuration
+export const FLOW_TESTNET_CHAIN_ID = process.env.NEXT_PUBLIC_FLOW_TESTNET_CHAIN_ID!;
+export const FLOW_TESTNET_RPC = process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC!;
+
+// Validate environment variables
+if (!RECYCLING_SYSTEM_ADDRESS || !TEST_USDC_ADDRESS || !FLOW_TESTNET_CHAIN_ID || !FLOW_TESTNET_RPC) {
+    throw new Error('Missing required environment variables');
+}
 
 export const FLOW_TESTNET_PARAMS = {
     chainId: FLOW_TESTNET_CHAIN_ID,
-    chainName: 'Flow Testnet',
+    chainName: 'Flow EVM Testnet',
     nativeCurrency: {
         name: 'Flow',
         symbol: 'FLOW',
         decimals: 18
     },
-    rpcUrls: ['https://testnet.flow.com/rpc'],
-    blockExplorerUrls: ['https://testnet.flowscan.org']
+    rpcUrls: [FLOW_TESTNET_RPC],
+    blockExplorerUrls: ['https://evm-testnet.flowscan.org']
 };
 
 export const TEST_USDC_ABI = [
@@ -22,38 +35,53 @@ export const TEST_USDC_ABI = [
     "function totalSupply() external view returns (uint256)",
     "function balanceOf(address account) external view returns (uint256)",
     "function allowance(address owner, address spender) external view returns (uint256)",
-    
+
     "function mint(uint256 amount) external",
     "function transfer(address to, uint256 amount) external returns (bool)",
     "function approve(address spender, uint256 amount) external returns (bool)",
     "function transferFrom(address from, address to, uint256 amount) external returns (bool)",
-    
+
     "event Transfer(address indexed from, address indexed to, uint256 value)",
     "event Approval(address indexed owner, address indexed spender, uint256 value)"
 ];
 
-async function ensureFlowTestnet() {
-    if (!window.ethereum) throw new Error('No wallet found');
+export async function ensureFlowTestnet() {
+    if (!window.ethereum) {
+        throw new Error('Please install MetaMask to use this feature');
+    }
 
-    const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-    if (chainId !== FLOW_TESTNET_CHAIN_ID) {
-        try {
-            // Try to switch to Flow Testnet
-            await window.ethereum.request({
-                method: 'wallet_switchEthereumChain',
-                params: [{ chainId: FLOW_TESTNET_CHAIN_ID }],
-            });
-        } catch (switchError: any) {
-            // If chain hasn't been added to MetaMask, add it
-            if (switchError.code === 4902) {
+    try {
+        // Request chain switch
+        await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: FLOW_TESTNET_CHAIN_ID }],
+        });
+    } catch (switchError: any) {
+        // Chain hasn't been added to MetaMask
+        if (switchError.code === 4902) {
+            try {
                 await window.ethereum.request({
                     method: 'wallet_addEthereumChain',
                     params: [FLOW_TESTNET_PARAMS],
                 });
-            } else {
-                throw switchError;
+            } catch (addError) {
+                throw new Error('Failed to add Flow Testnet to MetaMask');
             }
+        } else {
+            throw new Error('Failed to switch to Flow Testnet');
         }
+    }
+}
+
+// Add window.ethereum type
+declare global {
+    interface Window {
+        ethereum?: {
+            request: (args: { method: string; params?: any[] }) => Promise<any>;
+            on: (event: string, callback: (params: any) => void) => void;
+            removeListener: (event: string, callback: (params: any) => void) => void;
+            isMetaMask?: boolean;
+        };
     }
 }
 
@@ -61,17 +89,21 @@ export async function approveUSDC(amount: number) {
     try {
         await ensureFlowTestnet();
 
-        const provider = new ethers.BrowserProvider(window.ethereum);
+        const provider = new ethers.BrowserProvider(window.ethereum as any);
         const signer = await provider.getSigner();
-        
-        const contract = new ethers.Contract(TEST_USDC_ADDRESS, TEST_USDC_ABI, signer);
-        
-        const tx = await contract.approve(TEST_USDC_ADDRESS, ethers.parseUnits(amount.toString(), 6));
+
+        const usdcContract = new ethers.Contract(TEST_USDC_ADDRESS, TEST_USDC_ABI, signer);
+
+        // Approve USDC spend to the RecyclingSystem contract
+        const tx = await usdcContract.approve(
+            RECYCLING_SYSTEM_ADDRESS, // Approve spend to the RecyclingSystem contract
+            ethers.parseUnits(amount.toString(), 6)
+        );
         await tx.wait();
-        
+
         return true;
     } catch (error) {
         console.error('Error approving USDC:', error);
-        throw error;
+        throw new Error(error instanceof Error ? error.message : 'Failed to approve USDC');
     }
 } 

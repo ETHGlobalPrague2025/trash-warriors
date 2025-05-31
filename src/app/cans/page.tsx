@@ -1,37 +1,98 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
 
-// Mock data - replace with contract calls
-const MOCK_REQUESTS = [
-    {
-        id: 1,
-        location: "123 Main St, Downtown",
-        coordinates: { lat: 40.7128, lng: -74.006 },
-        targetAmount: 1000,
-        currentAmount: 450,
-        tier: 1,
-        backers: 5,
-        daysLeft: 25,
-        creator: "0x1234...5678"
-    },
-    {
-        id: 2,
-        location: "Central Park West",
-        coordinates: { lat: 40.7829, lng: -73.9654 },
-        targetAmount: 2500,
-        currentAmount: 1200,
-        tier: 2,
-        backers: 8,
-        daysLeft: 15,
-        creator: "0x8765...4321"
-    }
-];
+interface Can {
+    id: number;
+    location: string;
+    totalStaked: bigint;
+    status: 'pending' | 'active';
+    targetAmount?: bigint;
+    currentValue?: bigint;
+    isLocked?: boolean;
+    deploymentTimestamp?: number;
+    lastEmptiedTimestamp?: number;
+}
+
+const RECYCLING_SYSTEM_ADDRESS = process.env.NEXT_PUBLIC_RECYCLING_SYSTEM_ADDRESS!;
+
+const RECYCLING_SYSTEM_ABI = [
+    // View functions for both can types
+    "function pendingGarbageCans(uint256) external view returns (string location, uint256 totalStaked, uint256 targetAmount, bool deployed, uint256 deployedGarbageCanId)",
+    "function garbageCans(uint256) external view returns (uint256 id, string location, uint256 currentValue, bool isActive, bool isLocked, uint256 deploymentTimestamp, uint256 lastEmptiedTimestamp, uint256 totalStaked)"
+] as const;
 
 export default function CansPage() {
     const router = useRouter();
-    const [filter, setFilter] = useState<'all' | 'near' | 'ending'>('all');
+    const [filter, setFilter] = useState<'all' | 'pending' | 'active'>('all');
+    const [cans, setCans] = useState<Can[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        loadCans();
+    }, []);
+
+    const loadCans = async () => {
+        try {
+            setIsLoading(true);
+            
+            const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC);
+            const contract = new ethers.Contract(
+                RECYCLING_SYSTEM_ADDRESS,
+                RECYCLING_SYSTEM_ABI,
+                provider
+            );
+
+            // Get one pending can
+            try {
+                const pendingInfo = await contract.pendingGarbageCans(1);
+                if (!pendingInfo.deployed) {
+                    setCans(cans => [...cans, {
+                        id: 1,
+                        location: pendingInfo.location,
+                        totalStaked: pendingInfo.totalStaked,
+                        targetAmount: pendingInfo.targetAmount,
+                        status: 'pending'
+                    }]);
+                }
+            } catch (e) {
+                console.log('No pending can found');
+            }
+
+            // Get one active can
+            try {
+                const activeInfo = await contract.garbageCans(1);
+                if (activeInfo.isActive) {
+                    setCans(cans => [...cans, {
+                        id: 1,
+                        location: activeInfo.location,
+                        totalStaked: activeInfo.totalStaked,
+                        currentValue: activeInfo.currentValue,
+                        isLocked: activeInfo.isLocked,
+                        deploymentTimestamp: Number(activeInfo.deploymentTimestamp),
+                        lastEmptiedTimestamp: Number(activeInfo.lastEmptiedTimestamp),
+                        status: 'active'
+                    }]);
+                }
+            } catch (e) {
+                console.log('No active can found');
+            }
+
+        } catch (err) {
+            console.error('Error loading cans:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load cans');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const filteredCans = cans.filter(can => {
+        if (filter === 'all') return true;
+        return can.status === filter;
+    });
 
     return (
         <div className="relative min-h-screen">
@@ -52,104 +113,143 @@ export default function CansPage() {
                 <div className="max-w-md mx-auto">
                     {/* Header */}
                     <div className="flex justify-between items-center mb-6">
-                        <h1 className="text-2xl font-bold text-yellow-400">COMMUNITY CANS</h1>
+                        <h1 className="text-2xl font-bold text-yellow-400">GARBAGE CANS</h1>
                         <button
                             onClick={() => router.push('/cans/request')}
-                            className="bg-green-500 hover:bg-green-600 text-black font-bold py-2 px-4 rounded transition-colors"
+                            className="bg-green-500 hover:bg-green-600 text-black font-bold py-2 px-4 rounded"
                         >
-                            + NEW REQUEST
+                            REQUEST NEW
                         </button>
                     </div>
 
-                    {/* Filters */}
+                    {/* Filter buttons */}
                     <div className="flex gap-2 mb-6">
                         <button
                             onClick={() => setFilter('all')}
-                            className={`px-3 py-1 rounded text-sm ${
+                            className={`px-4 py-2 rounded ${
                                 filter === 'all'
                                     ? 'bg-green-500 text-black'
-                                    : 'bg-black/30 text-green-400 border border-green-500/30'
+                                    : 'bg-black/50 text-green-400'
                             }`}
                         >
-                            ALL
+                            All
                         </button>
                         <button
-                            onClick={() => setFilter('near')}
-                            className={`px-3 py-1 rounded text-sm ${
-                                filter === 'near'
+                            onClick={() => setFilter('pending')}
+                            className={`px-4 py-2 rounded ${
+                                filter === 'pending'
                                     ? 'bg-green-500 text-black'
-                                    : 'bg-black/30 text-green-400 border border-green-500/30'
+                                    : 'bg-black/50 text-green-400'
                             }`}
                         >
-                            NEAR ME
+                            Pending
                         </button>
                         <button
-                            onClick={() => setFilter('ending')}
-                            className={`px-3 py-1 rounded text-sm ${
-                                filter === 'ending'
+                            onClick={() => setFilter('active')}
+                            className={`px-4 py-2 rounded ${
+                                filter === 'active'
                                     ? 'bg-green-500 text-black'
-                                    : 'bg-black/30 text-green-400 border border-green-500/30'
+                                    : 'bg-black/50 text-green-400'
                             }`}
                         >
-                            ENDING SOON
+                            Active
                         </button>
                     </div>
 
-                    {/* Requests List */}
-                    <div className="space-y-4">
-                        {MOCK_REQUESTS.map((request) => (
-                            <div
-                                key={request.id}
-                                className="bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm"
-                            >
-                                <div className="flex justify-between items-start mb-3">
-                                    <div>
-                                        <h2 className="text-white font-bold mb-1">
-                                            {request.location}
-                                        </h2>
-                                        <div className="text-gray-400 text-sm">
-                                            Created by {request.creator}
-                                        </div>
-                                    </div>
-                                    <div className="text-orange-400">
-                                        {request.daysLeft}d left
-                                    </div>
-                                </div>
-
-                                {/* Progress bar */}
-                                <div className="mb-3">
-                                    <div className="flex justify-between text-sm mb-1">
-                                        <span className="text-green-400">
-                                            {Math.round((request.currentAmount / request.targetAmount) * 100)}% Funded
+                    {/* Cans List */}
+                    {isLoading ? (
+                        <div className="text-center text-green-400">Loading cans...</div>
+                    ) : error ? (
+                        <div className="text-center text-red-400">{error}</div>
+                    ) : filteredCans.length === 0 ? (
+                        <div className="text-center text-gray-400">No cans found</div>
+                    ) : (
+                        <div className="space-y-4">
+                            {filteredCans.map((can) => (
+                                <div
+                                    key={`${can.status}-${can.id}`}
+                                    className="bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm"
+                                >
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h2 className="text-white font-bold">Can #{can.id}</h2>
+                                        <span className={`px-2 py-1 rounded text-xs ${
+                                            can.status === 'pending'
+                                                ? 'bg-yellow-500/20 text-yellow-400'
+                                                : can.isLocked
+                                                    ? 'bg-red-500/20 text-red-400'
+                                                    : 'bg-green-500/20 text-green-400'
+                                        }`}>
+                                            {can.status === 'pending' 
+                                                ? 'PENDING' 
+                                                : can.isLocked 
+                                                    ? 'LOCKED' 
+                                                    : 'ACTIVE'}
                                         </span>
-                                        <span className="text-yellow-400">
-                                            {request.currentAmount} / {request.targetAmount} 🪙
-                                        </span>
                                     </div>
-                                    <div className="bg-gray-800/50 rounded-full h-2">
-                                        <div
-                                            className="bg-green-500 h-full rounded-full"
-                                            style={{
-                                                width: `${(request.currentAmount / request.targetAmount) * 100}%`
-                                            }}
-                                        />
-                                    </div>
-                                </div>
+                                    <div className="text-gray-400 text-sm mb-4">{can.location}</div>
 
-                                <div className="flex justify-between items-center text-sm">
-                                    <div className="text-gray-400">
-                                        {request.backers} backers
-                                    </div>
-                                    <button
-                                        onClick={() => router.push(`/cans/${request.id}`)}
-                                        className="bg-green-500 hover:bg-green-600 text-black font-bold py-1 px-3 rounded text-sm transition-colors"
-                                    >
-                                        CONTRIBUTE
-                                    </button>
+                                    {can.status === 'pending' ? (
+                                        // Pending can display
+                                        <>
+                                            <div className="mb-3">
+                                                <div className="flex justify-between text-sm mb-1">
+                                                    <span className="text-green-400">
+                                                        {Math.round((Number(can.totalStaked) / Number(can.targetAmount)) * 100)}% Funded
+                                                    </span>
+                                                    <span className="text-yellow-400">
+                                                        {ethers.formatUnits(can.totalStaked, 6)} / {ethers.formatUnits(can.targetAmount!, 6)} USDC
+                                                    </span>
+                                                </div>
+                                                <div className="bg-gray-800/50 rounded-full h-2">
+                                                    <div
+                                                        className="bg-green-500 h-full rounded-full"
+                                                        style={{
+                                                            width: `${(Number(can.totalStaked) / Number(can.targetAmount)) * 100}%`
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => router.push(`/cans/${can.id}`)}
+                                                className="bg-green-500 hover:bg-green-600 text-black font-bold py-2 px-4 rounded w-full"
+                                            >
+                                                CONTRIBUTE
+                                            </button>
+                                        </>
+                                    ) : (
+                                        // Active can display
+                                        <>
+                                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <div className="text-gray-400 text-xs">Current Value</div>
+                                                    <div className="text-yellow-400">
+                                                        {ethers.formatUnits(can.currentValue!, 6)} USDC
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-gray-400 text-xs">Total Staked</div>
+                                                    <div className="text-yellow-400">
+                                                        {ethers.formatUnits(can.totalStaked, 6)} USDC
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => router.push(`/collector?canId=${can.id}`)}
+                                                disabled={can.isLocked}
+                                                className={`w-full font-bold py-2 px-4 rounded ${
+                                                    can.isLocked
+                                                        ? 'bg-gray-500 cursor-not-allowed'
+                                                        : 'bg-green-500 hover:bg-green-600'
+                                                } text-black`}
+                                            >
+                                                {can.isLocked ? 'LOCKED' : 'COLLECT'}
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
