@@ -5,69 +5,29 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import SelectLocationMap from '@/components/SelectLocationMap';
 
-const RECYCLING_SYSTEM_ADDRESS = '0x66FBB0A1F1bb4A20bA47DB62eCF95c6BB1Dc9B42';
+const RECYCLING_SYSTEM_ADDRESS = process.env.NEXT_PUBLIC_RECYCLING_SYSTEM_ADDRESS!;
 
 const RECYCLING_SYSTEM_ABI = [
-    "function getGarbageCanInfo(uint256 garbageCanId) external view returns (string location, uint256 currentValue, bool isActive, bool isLocked, uint256 deploymentTimestamp, uint256 lastEmptiedTimestamp, uint256 totalStaked)",
+    "function garbageCans(uint256) external view returns (uint256 id, string location, uint256 currentValue, bool isActive, bool isLocked, uint256 deploymentTimestamp, uint256 lastEmptiedTimestamp, uint256 totalStaked)",
     "function buyContents(uint256 garbageCanId) external",
-    "function PLATFORM_FEE_PERCENT() external view returns (uint256)",
-];
+    "function nextGarbageCanId() external view returns (uint256)"
+] as const;
 
-interface GarbageCan {
+interface ActiveCan {
     id: number;
     location: string;
     currentValue: bigint;
-    purchaseValue: bigint; // Including platform fee
+    purchaseValue: bigint;
     isActive: boolean;
     isLocked: boolean;
     deploymentTimestamp: number;
     lastEmptiedTimestamp: number;
     totalStaked: bigint;
-    coordinates?: { lat: number; lng: number };
 }
-
-const MOCK_CANS: GarbageCan[] = [
-    {
-        id: 1,
-        location: "Central Park West",
-        currentValue: BigInt(1500000), // 1.5 USDC
-        purchaseValue: BigInt(2250000), // 2.25 USDC (50% fee)
-        isActive: true,
-        isLocked: false,
-        deploymentTimestamp: Date.now() - 7 * 24 * 60 * 60 * 1000, // 7 days ago
-        lastEmptiedTimestamp: Date.now() - 2 * 24 * 60 * 60 * 1000, // 2 days ago
-        totalStaked: BigInt(1000000000), // 1000 USDC
-        coordinates: { lat: 40.7829, lng: -73.9654 }
-    },
-    {
-        id: 2,
-        location: "Times Square",
-        currentValue: BigInt(3200000), // 3.2 USDC
-        purchaseValue: BigInt(4800000), // 4.8 USDC (50% fee)
-        isActive: true,
-        isLocked: false,
-        deploymentTimestamp: Date.now() - 14 * 24 * 60 * 60 * 1000,
-        lastEmptiedTimestamp: Date.now() - 1 * 24 * 60 * 60 * 1000,
-        totalStaked: BigInt(2500000000),
-        coordinates: { lat: 40.7580, lng: -73.9855 }
-    },
-    {
-        id: 3,
-        location: "Brooklyn Bridge Park",
-        currentValue: BigInt(800000), // 0.8 USDC
-        purchaseValue: BigInt(1200000), // 1.2 USDC (50% fee)
-        isActive: true,
-        isLocked: false,
-        deploymentTimestamp: Date.now() - 5 * 24 * 60 * 60 * 1000,
-        lastEmptiedTimestamp: Date.now() - 12 * 60 * 60 * 1000,
-        totalStaked: BigInt(5000000000),
-        coordinates: { lat: 40.7024, lng: -73.9960 }
-    }
-];
 
 export default function CollectorPage() {
     const router = useRouter();
-    const [activeCans, setActiveCans] = useState<GarbageCan[]>([]);
+    const [activeCans, setActiveCans] = useState<ActiveCan[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isPurchasing, setIsPurchasing] = useState(false);
@@ -79,12 +39,47 @@ export default function CollectorPage() {
 
     const loadActiveCans = async () => {
         try {
-            // For demo, use mock data instead of contract calls
-            setActiveCans(MOCK_CANS);
-            setIsLoading(false);
+            setIsLoading(true);
+            const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC);
+            const contract = new ethers.Contract(
+                RECYCLING_SYSTEM_ADDRESS,
+                RECYCLING_SYSTEM_ABI,
+                provider
+            );
+
+            // Get total count
+            const nextId = await contract.nextGarbageCanId();
+            const cans: ActiveCan[] = [];
+
+            // Get active cans
+            for (let i = 0; i < Number(nextId); i++) {
+                try {
+                    const canInfo = await contract.garbageCans(i);
+                    if (canInfo.isActive) {
+                        // Calculate purchase value with platform fee
+                        const purchaseValue = (canInfo.currentValue * BigInt(150)) / BigInt(100); // 50% fee
+
+                        cans.push({
+                            id: i,
+                            location: canInfo.location,
+                            currentValue: canInfo.currentValue,
+                            purchaseValue,
+                            isActive: canInfo.isActive,
+                            isLocked: canInfo.isLocked,
+                            deploymentTimestamp: Number(canInfo.deploymentTimestamp),
+                            lastEmptiedTimestamp: Number(canInfo.lastEmptiedTimestamp),
+                            totalStaked: canInfo.totalStaked
+                        });
+                    }
+                } catch (e) {
+                    console.log(`Error fetching can ${i}:`, e);
+                }
+            }
+
+            setActiveCans(cans);
         } catch (err) {
-            setError('Failed to load garbage cans');
-            console.error(err);
+            console.error('Error loading cans:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load cans');
         } finally {
             setIsLoading(false);
         }
