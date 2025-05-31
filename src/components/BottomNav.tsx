@@ -25,14 +25,20 @@ export default function BottomNav() {
                     onClick={() => router.push('/quests')}
                 />
                 <NavButton
+                    icon="🗑️"
+                    label="CANS"
+                    isActive={pathname.includes('/cans')}
+                    onClick={() => router.push('/cans/request')}
+                />
+                <NavButton
                     icon="🏆"
-                    label="LEADERBOARD"
+                    label="RANK"
                     isActive={pathname === '/leaderboard'}
                     onClick={() => router.push('/leaderboard')}
                 />
                 <NavButton
                     icon="🎒"
-                    label="INVENTORY"
+                    label="ITEMS"
                     isActive={pathname === '/inventory'}
                     onClick={() => router.push('/inventory')}
                 />

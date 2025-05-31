@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@types/mapbox-gl": "^3.4.1",
+    "ethers": "^6.14.3",
     "mapbox-gl": "^3.12.0",
     "next": "15.3.3",
     "react": "^19.0.0",
