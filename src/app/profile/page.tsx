@@ -1,5 +1,7 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+
 export default function ProfilePage() {
     const profile = {
         level: 12,
@@ -16,6 +18,8 @@ export default function ProfilePage() {
             streak: '7d'
         }
     };
+
+    const router = useRouter();
 
     return (
         <div className="relative min-h-screen">
@@ -75,9 +79,15 @@ export default function ProfilePage() {
                     </div>
 
                     {/* Navigation Buttons */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                         <button className="bg-green-500 text-black font-bold py-2 px-4 rounded">
                             PROFILE
+                        </button>
+                        <button 
+                            onClick={() => router.push('/quests')}
+                            className="bg-orange-500 text-black font-bold py-2 px-4 rounded"
+                        >
+                            QUESTS
                         </button>
                         <button className="bg-black border border-green-500 text-green-500 font-bold py-2 px-4 rounded">
                             LEADERBOARD
