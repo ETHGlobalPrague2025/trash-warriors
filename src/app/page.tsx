@@ -1,14 +1,17 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export default function Home() {
   const [email, setEmail] = useState('');
+  const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     // TODO: Implement vlayer email proof verification
     console.log('Login with:', email);
+    router.push('/profile');
   };
 
   return (
