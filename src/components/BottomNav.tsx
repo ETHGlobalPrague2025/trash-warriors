@@ -9,6 +9,9 @@ export default function BottomNav() {
     // Don't show on login page
     if (pathname === '/' || pathname === '/login') return null;
 
+    // TODO: Check if user is collector
+    const isCollector = true; // Replace with actual check
+
     return (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-sm border-t-2 border-green-500/30">
             <div className="max-w-md mx-auto flex justify-around items-center p-2">
@@ -30,6 +33,14 @@ export default function BottomNav() {
                     isActive={pathname.includes('/cans')}
                     onClick={() => router.push('/cans')}
                 />
+                {isCollector && (
+                    <NavButton
+                        icon="♻️"
+                        label="COLLECT"
+                        isActive={pathname === '/collector'}
+                        onClick={() => router.push('/collector')}
+                    />
+                )}
                 <NavButton
                     icon="🏆"
                     label="RANK"
