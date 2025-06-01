@@ -10,6 +10,15 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_TEST_USDC_ADDRESS: process.env.NEXT_PUBLIC_TEST_USDC_ADDRESS,
     NEXT_PUBLIC_FLOW_TESTNET_CHAIN_ID: process.env.NEXT_PUBLIC_FLOW_TESTNET_CHAIN_ID,
     NEXT_PUBLIC_FLOW_TESTNET_RPC: process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC,
+    NEXT_PUBLIC_ZKP_API_URL: process.env.NEXT_PUBLIC_ZKP_API_URL,
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/api/zkp',
+        destination: `${process.env.NEXT_PUBLIC_ZKP_API_URL}/api/zkp`,
+      },
+    ];
   },
 };
 

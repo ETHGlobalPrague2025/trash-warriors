@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, ChangeEvent, FormEvent } from "react";
 import { useRouter } from 'next/navigation';
 
 const MOCK_INVENTORY = {
@@ -51,6 +52,97 @@ const MOCK_INVENTORY = {
 
 export default function InventoryPage() {
     const router = useRouter();
+    const [fileContent, setFileContent] = useState<string>("");
+    const [fileName, setFileName] = useState<string>("");
+    const [isVerifying, setIsVerifying] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+    const [isVerified, setIsVerified] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('emailVerified') === 'true';
+        }
+        return false;
+    });
+
+    const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) {
+            setFileContent("");
+            setFileName("");
+            setError(null);
+            return;
+        }
+
+        setFileName(file.name);
+        setError(null);
+
+        try {
+            const rawText = await file.text();
+            const escapedText = rawText
+                .replace(/\\/g, "\\\\")
+                .replace(/\r/g, "\\r")
+                .replace(/\n/g, "\\n")
+                .replace(/\t/g, "\\t");
+            setFileContent(escapedText);
+        } catch (error) {
+            console.error("Error reading file:", error);
+            setError("Could not read the file content.");
+            setFileContent("");
+            setFileName("");
+        }
+        e.target.value = "";
+    };
+
+    const handleVerify = async (e: FormEvent) => {
+        e.preventDefault();
+        if (!fileContent) {
+            setError("Please select a file first.");
+            return;
+        }
+
+        setIsVerifying(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            const response = await fetch(`${process.env.NEXT_PUBLIC_ZKP_API_URL}/api/zkp`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    data: fileContent,
+                }),
+            });
+
+            if (response.status === 400) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || "Verification failed");
+            }
+
+            if (!response.ok) {
+                throw new Error("Network response was not ok");
+            }
+
+            const result = await response.json();
+
+            // Store verification result
+            localStorage.setItem('emailVerified', 'true');
+            localStorage.setItem('verificationProof', JSON.stringify({
+                prover: result.prover,
+                verifier: result.verifier
+            }));
+
+            setSuccess("Email verified successfully! You can now access special quests.");
+            setIsVerified(true);
+        } catch (err) {
+            console.error("Error:", err);
+            setError(err instanceof Error ? err.message : "An unknown error occurred.");
+            setIsVerified(false);
+        } finally {
+            setIsVerifying(false);
+        }
+    };
 
     return (
         <div className="relative min-h-screen">
@@ -71,17 +163,74 @@ export default function InventoryPage() {
             {/* Content */}
             <div className="relative z-20 min-h-screen p-4">
                 <div className="max-w-md mx-auto">
-                    {/* Header */}
-                    <div className="flex justify-between items-center mb-6">
-                        <h1 className="text-2xl font-bold text-yellow-400">INVENTORY</h1>
-                        <div className="flex gap-3">
-                            <div className="text-yellow-400">
-                                {MOCK_INVENTORY.tokens.trash} 🪙
-                            </div>
-                            <div className="text-purple-400">
-                                {MOCK_INVENTORY.tokens.special} ⭐
+                    <h1 className="text-2xl font-bold text-yellow-400 mb-6">INVENTORY</h1>
+
+                    {/* Email Verification Section */}
+                    <div className="mb-8 bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-green-400 font-bold">EMAIL VERIFICATION</h2>
+                            <div className={`px-2 py-1 rounded text-sm ${isVerified
+                                    ? 'bg-green-500/20 text-green-400'
+                                    : 'bg-orange-500/20 text-orange-400'
+                                }`}>
+                                {isVerified ? 'VERIFIED' : 'UNVERIFIED'}
                             </div>
                         </div>
+
+                        {!isVerified && (
+                            <>
+                                <p className="text-gray-400 text-sm mb-4">
+                                    Verify your email to unlock special rewards and quests
+                                </p>
+                                <div className="mb-4">
+                                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-500 border-dashed rounded-lg cursor-pointer bg-black/30 hover:bg-black/50">
+                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                            <svg className="w-8 h-8 mb-4 text-green-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                                <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
+                                            </svg>
+                                            <p className="mb-2 text-sm text-green-400">
+                                                <span className="font-semibold">Upload .eml file</span>
+                                            </p>
+                                            <p className="text-xs text-gray-400">to verify your email</p>
+                                        </div>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            accept=".eml"
+                                            onChange={handleFileChange}
+                                            disabled={isVerifying}
+                                        />
+                                    </label>
+                                    {fileName && (
+                                        <p className="mt-2 text-sm text-green-400">
+                                            Selected: {fileName}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <button
+                                    onClick={handleVerify}
+                                    disabled={isVerifying || !fileContent}
+                                    className={`w-full font-bold py-2 px-4 rounded ${isVerifying || !fileContent
+                                            ? 'bg-gray-500 cursor-not-allowed'
+                                            : 'bg-green-500 hover:bg-green-600'
+                                        } text-black`}
+                                >
+                                    {isVerifying ? 'VERIFYING...' : 'VERIFY EMAIL'}
+                                </button>
+
+                                {error && (
+                                    <div className="mt-4 bg-red-500/20 border border-red-500/30 rounded p-3 text-sm text-red-400">
+                                        {error}
+                                    </div>
+                                )}
+                                {success && (
+                                    <div className="mt-4 bg-green-500/20 border border-green-500/30 rounded p-3 text-sm text-green-400">
+                                        {success}
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
 
                     {/* NFT Collection */}
@@ -95,11 +244,10 @@ export default function InventoryPage() {
                                 >
                                     <div className="text-4xl mb-2">{nft.image}</div>
                                     <h3 className="text-white font-bold mb-1">{nft.name}</h3>
-                                    <div className={`text-sm mb-2 ${
-                                        nft.type === 'LEGENDARY' ? 'text-yellow-400' :
-                                        nft.type === 'RARE' ? 'text-purple-400' :
-                                        'text-blue-400'
-                                    }`}>
+                                    <div className={`text-sm mb-2 ${nft.type === 'LEGENDARY' ? 'text-yellow-400' :
+                                            nft.type === 'RARE' ? 'text-purple-400' :
+                                                'text-blue-400'
+                                        }`}>
                                         {nft.type}
                                     </div>
                                     <p className="text-gray-400 text-sm">{nft.description}</p>
