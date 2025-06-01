@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, ChangeEvent, FormEvent } from "react";
+import { useState, ChangeEvent, FormEvent, useRef, useEffect } from "react";
 import { useRouter } from 'next/navigation';
 
 const MOCK_INVENTORY = {
@@ -50,6 +50,12 @@ const MOCK_INVENTORY = {
     ]
 };
 
+interface DeviceResponse {
+    hash: string;
+    timestamp: number;
+    deviceId: string;
+}
+
 export default function InventoryPage() {
     const router = useRouter();
     const [fileContent, setFileContent] = useState<string>("");
@@ -57,12 +63,16 @@ export default function InventoryPage() {
     const [isVerifying, setIsVerifying] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
-    const [isVerified, setIsVerified] = useState<boolean>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('emailVerified') === 'true';
-        }
-        return false;
-    });
+    const [isVerified, setIsVerified] = useState<boolean>(false);
+    const [isCapturing, setIsCapturing] = useState(false);
+    const [isDeviceConnecting, setIsDeviceConnecting] = useState(false);
+    const [faceVerified, setFaceVerified] = useState(false);
+
+    // Move localStorage checks to useEffect
+    useEffect(() => {
+        setIsVerified(localStorage.getItem('emailVerified') === 'true');
+        setFaceVerified(!!localStorage.getItem('faceHash'));
+    }, []);
 
     const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -144,6 +154,50 @@ export default function InventoryPage() {
         }
     };
 
+    const verifyFaceAtDevice = async () => {
+        setIsCapturing(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            // Use the ngrok endpoint
+            const response = await fetch('https://valued-hermit-sadly.ngrok-free.app/face/capture', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to connect to device');
+            }
+
+            const result: DeviceResponse = await response.json();
+
+            // Store hash with email verification
+            const verificationProof = localStorage.getItem('verificationProof');
+            if (verificationProof) {
+                const proof = JSON.parse(verificationProof);
+                localStorage.setItem('faceHash', result.hash);
+                localStorage.setItem('deviceVerification', JSON.stringify({
+                    email: proof.email,
+                    faceHash: result.hash,
+                    deviceId: result.deviceId,
+                    timestamp: result.timestamp
+                }));
+                setFaceVerified(true);
+            }
+
+            setSuccess("Face verification successful! You can now collect rewards.");
+        } catch (err) {
+            console.error("Error:", err);
+            setError(err instanceof Error ? err.message : "Face verification failed");
+            setFaceVerified(false);
+        } finally {
+            setIsCapturing(false);
+        }
+    };
+
     return (
         <div className="relative min-h-screen">
             {/* Background image */}
@@ -170,8 +224,8 @@ export default function InventoryPage() {
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-green-400 font-bold">EMAIL VERIFICATION</h2>
                             <div className={`px-2 py-1 rounded text-sm ${isVerified
-                                    ? 'bg-green-500/20 text-green-400'
-                                    : 'bg-orange-500/20 text-orange-400'
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-orange-500/20 text-orange-400'
                                 }`}>
                                 {isVerified ? 'VERIFIED' : 'UNVERIFIED'}
                             </div>
@@ -212,8 +266,8 @@ export default function InventoryPage() {
                                     onClick={handleVerify}
                                     disabled={isVerifying || !fileContent}
                                     className={`w-full font-bold py-2 px-4 rounded ${isVerifying || !fileContent
-                                            ? 'bg-gray-500 cursor-not-allowed'
-                                            : 'bg-green-500 hover:bg-green-600'
+                                        ? 'bg-gray-500 cursor-not-allowed'
+                                        : 'bg-green-500 hover:bg-green-600'
                                         } text-black`}
                                 >
                                     {isVerifying ? 'VERIFYING...' : 'VERIFY EMAIL'}
@@ -233,6 +287,45 @@ export default function InventoryPage() {
                         )}
                     </div>
 
+                    {/* Face Verification Section */}
+                    <div className="mb-8 bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-green-400 font-bold">FACE VERIFICATION</h2>
+                            <div className={`px-2 py-1 rounded text-sm ${faceVerified
+                                ? 'bg-green-500/20 text-green-400'
+                                : 'bg-orange-500/20 text-orange-400'
+                                }`}>
+                                {faceVerified ? 'VERIFIED' : 'UNVERIFIED'}
+                            </div>
+                        </div>
+
+                        <p className="text-gray-400 text-sm mb-4">
+                            Stand in front of the device camera and click verify to complete face verification
+                        </p>
+
+                        <button
+                            onClick={verifyFaceAtDevice}
+                            disabled={isCapturing}
+                            className={`w-full font-bold py-2 px-4 rounded ${isCapturing
+                                ? 'bg-gray-500 cursor-not-allowed'
+                                : 'bg-green-500 hover:bg-green-600'
+                                } text-black`}
+                        >
+                            {isCapturing ? 'VERIFYING...' : 'VERIFY AT DEVICE'}
+                        </button>
+
+                        {error && (
+                            <div className="mt-4 bg-red-500/20 border border-red-500/30 rounded p-3 text-sm text-red-400">
+                                {error}
+                            </div>
+                        )}
+                        {success && (
+                            <div className="mt-4 bg-green-500/20 border border-green-500/30 rounded p-3 text-sm text-green-400">
+                                {success}
+                            </div>
+                        )}
+                    </div>
+
                     {/* NFT Collection */}
                     <div className="mb-6">
                         <h2 className="text-green-400 font-bold mb-3">NFT COLLECTION</h2>
@@ -245,8 +338,8 @@ export default function InventoryPage() {
                                     <div className="text-4xl mb-2">{nft.image}</div>
                                     <h3 className="text-white font-bold mb-1">{nft.name}</h3>
                                     <div className={`text-sm mb-2 ${nft.type === 'LEGENDARY' ? 'text-yellow-400' :
-                                            nft.type === 'RARE' ? 'text-purple-400' :
-                                                'text-blue-400'
+                                        nft.type === 'RARE' ? 'text-purple-400' :
+                                            'text-blue-400'
                                         }`}>
                                         {nft.type}
                                     </div>
