@@ -160,19 +160,20 @@ export default function InventoryPage() {
         setSuccess(null);
 
         try {
-            // Use the ngrok endpoint
-            const response = await fetch('https://valued-hermit-sadly.ngrok-free.app/face/capture', {
-                method: 'POST',
+            // Simple GET request to get face hash
+            const response = await fetch('https://valued-hermit-sadly.ngrok-free.app/hash', {
+                method: 'GET',
                 headers: {
-                    'Content-Type': 'application/json',
-                },
+                    'Accept': 'application/json',
+                    'ngrok-skip-browser-warning': '1'
+                }
             });
 
             if (!response.ok) {
-                throw new Error('Failed to connect to device');
+                throw new Error('Failed to get face hash');
             }
 
-            const result: DeviceResponse = await response.json();
+            const result = await response.json();
 
             // Store hash with email verification
             const verificationProof = localStorage.getItem('verificationProof');
@@ -182,8 +183,7 @@ export default function InventoryPage() {
                 localStorage.setItem('deviceVerification', JSON.stringify({
                     email: proof.email,
                     faceHash: result.hash,
-                    deviceId: result.deviceId,
-                    timestamp: result.timestamp
+                    timestamp: Date.now()
                 }));
                 setFaceVerified(true);
             }

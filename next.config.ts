@@ -12,14 +12,6 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_FLOW_TESTNET_RPC: process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC,
     NEXT_PUBLIC_ZKP_API_URL: process.env.NEXT_PUBLIC_ZKP_API_URL,
   },
-  async rewrites() {
-    return [
-      {
-        source: '/api/zkp',
-        destination: `${process.env.NEXT_PUBLIC_ZKP_API_URL}/api/zkp`,
-      },
-    ];
-  },
 };
 
 export default nextConfig;

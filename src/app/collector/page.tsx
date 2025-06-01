@@ -23,6 +23,7 @@ interface ActiveCan {
     deploymentTimestamp: number;
     lastEmptiedTimestamp: number;
     totalStaked: bigint;
+    coordinates?: { lat: number; lng: number; };
 }
 
 export default function CollectorPage() {
