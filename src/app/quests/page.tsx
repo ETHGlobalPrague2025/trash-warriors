@@ -1,52 +1,126 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
 
-const MOCK_QUESTS = [
-    {
-        id: 1,
-        title: "Clean Street Warriors",
-        description: "Clear 3 overflowing bins in the Downtown district",
-        reward: { xp: 250, tokens: 100 },
-        difficulty: "MEDIUM",
-        timeLimit: "2h 30m",
-        district: "Downtown",
-        type: "Collection"
-    },
-    {
-        id: 2,
-        title: "Rapid Response",
-        description: "Handle an emergency spillage report",
-        reward: { xp: 400, tokens: 150 },
-        difficulty: "HARD",
-        timeLimit: "1h",
-        district: "Industrial",
-        type: "Emergency"
-    },
-    {
-        id: 3,
-        title: "Eco Patrol",
-        description: "Monitor and report bin status in residential area",
-        reward: { xp: 150, tokens: 75 },
-        difficulty: "EASY",
-        timeLimit: "4h",
-        district: "Residential",
-        type: "Patrol"
-    }
-];
+const QUEST_SYSTEM_ADDRESS = process.env.NEXT_PUBLIC_QUEST_SYSTEM_ADDRESS!;
+
+const QUEST_TYPES = {
+    FIRST_RECYCLER: 0,    // Recycle anything once
+    WEEKLY_WARRIOR: 1,    // Recycle 5 items in a week
+    EARTH_CHAMPION: 2,    // Recycle 20 items total
+    MATERIAL_MASTER: 3    // Recycle all material types
+} as const;
+
+interface Quest {
+    type: number;
+    name: string;
+    description: string;
+    requiredAmount: bigint;
+    rewardAmount: bigint;
+    nftReward: boolean;
+    nftURI: string;
+    progress?: bigint;
+    completed?: boolean;
+    claimed?: boolean;
+}
+
+const QUEST_SYSTEM_ABI = [
+    "function quests(uint8) external view returns (string name, string description, uint256 requiredAmount, uint256 rewardAmount, bool nftReward, string nftURI)",
+    "function getQuestStatus(bytes32 emailHash, uint8 questType) external view returns (uint256 progress, uint256 required, bool completed, bool claimed)",
+    "function claimRewards(bytes32 emailHash, uint8 questType) external"
+] as const;
 
 export default function QuestsPage() {
     const router = useRouter();
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedType, setSelectedType] = useState<string>('');
+    const [quests, setQuests] = useState<Quest[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [isClaiming, setIsClaiming] = useState(false);
 
-    const filteredQuests = MOCK_QUESTS.filter(quest => {
-        const matchesSearch = quest.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            quest.description.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesType = !selectedType || quest.type === selectedType;
-        return matchesSearch && matchesType;
-    });
+    useEffect(() => {
+        loadQuests();
+    }, []);
+
+    const loadQuests = async () => {
+        try {
+            setIsLoading(true);
+            const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_FLOW_TESTNET_RPC);
+            const contract = new ethers.Contract(
+                QUEST_SYSTEM_ADDRESS,
+                QUEST_SYSTEM_ABI,
+                provider
+            );
+
+            // Get all quest types
+            const questPromises = Object.values(QUEST_TYPES).map(async (type) => {
+                const questInfo = await contract.quests(type);
+                
+                // Get user's progress if email is verified
+                let progress, completed, claimed;
+                try {
+                    // TODO: Get email hash from local storage or context
+                    const emailHash = ethers.id("user@example.com"); // Replace with actual email hash
+                    const status = await contract.getQuestStatus(emailHash, type);
+                    progress = status.progress;
+                    completed = status.completed;
+                    claimed = status.claimed;
+                } catch (e) {
+                    console.log('Error getting quest status:', e);
+                }
+
+                return {
+                    type,
+                    name: questInfo.name,
+                    description: questInfo.description,
+                    requiredAmount: questInfo.requiredAmount,
+                    rewardAmount: questInfo.rewardAmount,
+                    nftReward: questInfo.nftReward,
+                    nftURI: questInfo.nftURI,
+                    progress,
+                    completed,
+                    claimed
+                };
+            });
+
+            const loadedQuests = await Promise.all(questPromises);
+            setQuests(loadedQuests);
+        } catch (err) {
+            console.error('Error loading quests:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load quests');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleClaim = async (questType: number) => {
+        if (!window.ethereum) throw new Error('No wallet found');
+        setError(null);
+        setIsClaiming(true);
+
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(
+                QUEST_SYSTEM_ADDRESS,
+                QUEST_SYSTEM_ABI,
+                signer
+            );
+
+            // TODO: Get email hash from local storage or context
+            const emailHash = ethers.id("user@example.com"); // Replace with actual email hash
+            const tx = await contract.claimRewards(emailHash, questType);
+            await tx.wait();
+
+            // Reload quests after claiming
+            await loadQuests();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to claim rewards');
+        } finally {
+            setIsClaiming(false);
+        }
+    };
 
     return (
         <div className="relative min-h-screen">
@@ -69,7 +143,7 @@ export default function QuestsPage() {
                 <div className="max-w-md mx-auto">
                     {/* Header */}
                     <div className="flex justify-between items-center mb-6">
-                        <h1 className="text-2xl font-bold text-yellow-400">AVAILABLE QUESTS</h1>
+                        <h1 className="text-2xl font-bold text-yellow-400">QUESTS</h1>
                         <button
                             onClick={() => router.push('/profile')}
                             className="text-green-400 hover:text-green-300"
@@ -78,62 +152,77 @@ export default function QuestsPage() {
                         </button>
                     </div>
 
-                    {/* Search and Filter */}
-                    <div className="bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm mb-6">
-                        <input
-                            type="text"
-                            placeholder="Search quests..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full bg-black/50 border border-green-500/50 text-green-400 p-3 rounded mb-3 focus:outline-none focus:border-green-500"
-                        />
-
-                        <div className="flex gap-2">
-                            {['Collection', 'Emergency', 'Patrol'].map(type => (
-                                <button
-                                    key={type}
-                                    onClick={() => setSelectedType(selectedType === type ? '' : type)}
-                                    className={`px-3 py-1 rounded text-sm ${selectedType === type
-                                            ? 'bg-green-500 text-black'
-                                            : 'bg-black/30 text-green-400 border border-green-500/30'
-                                        }`}
+                    {isLoading ? (
+                        <div className="text-center text-green-400">Loading quests...</div>
+                    ) : error ? (
+                        <div className="text-center text-red-400">{error}</div>
+                    ) : (
+                        <div className="space-y-4">
+                            {quests.map((quest) => (
+                                <div
+                                    key={quest.type}
+                                    className="bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm"
                                 >
-                                    {type}
-                                </button>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h2 className="text-xl text-yellow-400 font-bold">{quest.name}</h2>
+                                        {quest.completed && (
+                                            <span className="px-2 py-1 bg-green-500/20 text-green-400 text-sm rounded">
+                                                COMPLETED
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <p className="text-gray-300 text-sm mb-4">{quest.description}</p>
+
+                                    {/* Progress bar */}
+                                    <div className="mb-4">
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span className="text-green-400">Progress</span>
+                                            <span className="text-gray-400">
+                                                {quest.progress?.toString() || '0'} / {quest.requiredAmount.toString()}
+                                            </span>
+                                        </div>
+                                        <div className="bg-gray-800/50 rounded-full h-2">
+                                            <div
+                                                className="bg-green-500 h-full rounded-full"
+                                                style={{
+                                                    width: `${quest.progress ? (Number(quest.progress) / Number(quest.requiredAmount)) * 100 : 0}%`
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Rewards */}
+                                    <div className="flex gap-3 mb-4">
+                                        <div className="text-yellow-400">
+                                            {ethers.formatUnits(quest.rewardAmount, 18)} 🪙
+                                        </div>
+                                        {quest.nftReward && (
+                                            <div className="text-purple-400">+NFT 🎨</div>
+                                        )}
+                                    </div>
+
+                                    <button
+                                        onClick={() => handleClaim(quest.type)}
+                                        disabled={!quest.completed || quest.claimed || isClaiming}
+                                        className={`w-full font-bold py-2 px-4 rounded ${
+                                            !quest.completed || quest.claimed || isClaiming
+                                                ? 'bg-gray-500 cursor-not-allowed'
+                                                : 'bg-green-500 hover:bg-green-600'
+                                        } text-black`}
+                                    >
+                                        {quest.claimed 
+                                            ? 'CLAIMED' 
+                                            : isClaiming 
+                                                ? 'CLAIMING...' 
+                                                : quest.completed 
+                                                    ? 'CLAIM REWARDS' 
+                                                    : 'IN PROGRESS'}
+                                    </button>
+                                </div>
                             ))}
                         </div>
-                    </div>
-
-                    {/* Quest List */}
-                    <div className="space-y-4">
-                        {filteredQuests.map(quest => (
-                            <div
-                                key={quest.id}
-                                onClick={() => router.push(`/quests/${quest.id}`)}
-                                className="bg-black/50 border-2 border-green-500 rounded-lg p-4 backdrop-blur-sm cursor-pointer hover:bg-black/60 transition-colors"
-                            >
-                                <div className="flex justify-between items-start mb-2">
-                                    <h2 className="text-xl text-yellow-400 font-bold">{quest.title}</h2>
-                                    <span className={`px-2 py-1 text-sm rounded ${quest.difficulty === 'EASY' ? 'bg-green-500/20 text-green-400' :
-                                            quest.difficulty === 'MEDIUM' ? 'bg-orange-500/20 text-orange-400' :
-                                                'bg-red-500/20 text-red-400'
-                                        }`}>
-                                        {quest.difficulty}
-                                    </span>
-                                </div>
-
-                                <p className="text-gray-300 text-sm mb-3">{quest.description}</p>
-
-                                <div className="flex justify-between text-sm">
-                                    <div className="flex gap-3">
-                                        <span className="text-yellow-400">{quest.reward.tokens} 🪙</span>
-                                        <span className="text-green-400">{quest.reward.xp} XP</span>
-                                    </div>
-                                    <span className="text-orange-400">{quest.timeLimit}</span>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                    )}
                 </div>
             </div>
         </div>
